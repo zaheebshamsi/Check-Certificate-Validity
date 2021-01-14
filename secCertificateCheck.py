@@ -1,77 +1,59 @@
 # checks if the certificate is valid
+# Supported Format: .cer , .pem
+# @TODO : Add supported formats to - .pkcs and .crt and .pfx
 # Zaheeb Shamsi
 # Function o chekc the certificate validity Rel 1.0
 # 5/Jan/2020
+# Pre-req python modules--- OpenSSSL , pem
+# pip install pyOpenSSL
+# pip install pem
 
+import OpenSSL
+import sys
 from datetime import datetime
-from sshConnectionClass import *
-from encDecryptPassword import encDecryptPassword
-import logging
+import os
+import pem
+import subprocess
 
-logger = logging.getLogger('check')
-
-
-def certificateCheck(product, target):
-
-    if not product["configuration"]["check"]["sec"]["certificateCheck"]:
-        logger.debug("Trigger for Security Certificate Validity Check not found, 0")
-        print("Trigger for Security Certificate Validity check not found, 0")
-        return
-    else:
-        logger.debug('Starting to run Security Certificate Validity check')
-        print('Starting to run Security Certificate Validity check')
-        try:
-            prod = product["configuration"]["product"]
-            flag = 0
-            for prd in target["configuration"]["bundle"]["products"]:
-                if prd["name"] != prod:
-                    continue
-                else:
-                    for server in prd["target"]["hostNames"]:
-                        if not prd['target']['operatingSystem'] == 'linux':
-                            continue
+def certificateCheck(certPath):
+    try:
+        for filename in os.listdir(certPath):
+            if filename.endswith('.pem') or filename.endswith('.cer'):  # pfx to be added
+                print("\n****Validity check for: {0}****\n".format(filename))
+                if filename.endswith('.pem'):
+                    file_path = os.path.join(certPath, filename)
+                    certs = pem.parse_file(file_path)  # using pem module
+                    for pem_certificates in certs:
+                        strcert = str(pem_certificates)
+                        loadCert = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, strcert)  # FILETYPE_ASC1
+                        issuer = loadCert.get_issuer()
+                        issuer_str = "".join("/{0:s}={1:s}".format(name.decode(), value.decode()) for name, value in issuer.get_components())
+                        print("Issuer:" , issuer_str)
+                        date = datetime.strptime(loadCert.get_notAfter().decode('ascii'), '%Y%m%d%H%M%SZ')
+                        print("Certificate expiry date and time: {0}".format(str(date)))
+                        if datetime.utcnow() < date:
+                            print("Certificate Valid. ,0")
                         else:
-                            logger.debug('Trigger for operating system on ' + server + ' set')
-                            print('Trigger for operating system on ' + server + ' set')
-                            target_user = str(prd["target"]["security"]["userName"])
-                            if prd["target"]["security"]["encrypted"]:
-                                target_password = encDecryptPassword(prd["target"]["security"]['encryptionKey'],
-                                                                     prd["target"]["security"]['password'])
-                            else:
-                                target_password = server(prd["target"]["security"]["password"])
-                            target_host_name = str(server)
-                            port = 22
-                            obj = sshGetConnectionAPI(host=target_host_name, username=target_user)
-                            obj.sshGetConnection(password=target_password, port=port)
-                            certPath = product["configuration"]["check"]["sec"]["certificatePathLin"]
-                            cmd = "openssl x509 -in {0} -noout -enddate".format(certPath)
-                            out, err = obj.sshExecCmd(cmd)
-
-                            if "Error opening Certificate {0}".format(certPath) in out:
-                                logger.debug("Certificate File doesn't exist or wrong path. ,11")
-                                print("Certificate File doesn't exist or wrong path. ,11\n")
-                            else:
-                                date1 = str(out[0])
-                                date1 = date1.split('=')  # recursively using date1 variable in order
-                                date1 = str(date1[1])  # to not consume much variable space.
-                                date1 = date1.split(' ')
-                                cert_expiry_date = datetime.strptime(
-                                    "{0}{1}{2} {3}".format(str(date1[4]), str(date1[0]), str(date1[2]), str(date1[3])),
-                                    '%Y%b%d %H:%M:%S')
-                                print("Certificate expiry date and time: {0}".format(str(cert_expiry_date)))
-                                if datetime.utcnow() < cert_expiry_date:
-                                    logger.debug("Certificate Valid on host {0} ,0".format(target_host_name))
-                                    print("Certificate Valid on host {0} ,0\n".format(target_host_name))
-                                    flag = 1
-                                else:
-                                    logger.debug("Certificate Invalid on host {0} ,1".format(target_host_name))
-                                    print("Certificate Invalid on host {0} ,1\n".format(target_host_name))
-                                    flag = 0
-
-                    if flag == 1:
-                        return 0
+                            print("Certificate has expired. ,1")
+                else:
+                    file_path = os.path.join(certPath, filename).encode('utf-8')
+                    loadCert = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM , open(file_path).read())  # FILETYPE_ASN1
+                    date = datetime.strptime(loadCert.get_notAfter().decode('ascii'), '%Y%m%d%H%M%SZ')
+                    issuer = loadCert.get_issuer()
+                    issuer_str = "  ".join("/{0:s}={1:s}".format(name.decode(), value.decode()) for name, value in issuer.get_components())
+                    print("Issuer:" , issuer_str)
+                    print("Certificate expiry date and time: {0}".format(str(date)))
+                    if datetime.utcnow() < date:
+                        print("Certificate Valid. ,0")
                     else:
-                        return 1
+                        print("Certificate has expired. ,1")
 
-        except Exception as e:
-            print(e)
+    except Exception as e:
+        exception_type, exception_object, exception_traceback = sys.exc_info()
+        line_number = exception_traceback.tb_lineno
+        print("Line number: ", line_number)
+        print("Exception")
+        print(e)
+
+if __name__ == "__main__":
+    certificateCheck("/home/hcmlxadmin/zaheebscr/test")
