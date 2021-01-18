@@ -56,4 +56,4 @@ def certificateCheck(certPath):
         print(e)
 
 if __name__ == "__main__":
-    certificateCheck("/home/hcmlxadmin/zaheebscr/test")
+    #certificateCheck("/home/zaheebscr/test")
